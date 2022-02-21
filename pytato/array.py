@@ -2026,6 +2026,85 @@ def eye(N: int, M: Optional[int] = None, k: int = 0,  # noqa: N803
                        axes=_get_default_axes(2))
 
 
+@dataclass
+class _ArangeInfo:
+    start: Optional[int]
+    stop: Optional[int]
+    step: Optional[int]
+    dtype: Optional[np.dtype]
+
+
+def arange(*args, **kwargs) -> Array:
+    explicit_dtype = False
+
+    # {{{ argument processing
+
+    inf = _ArangeInfo(
+            start=None,
+            stop=None,
+            step=None,
+            dtype=None)
+
+    # Yuck. Thanks, numpy developers. ;)
+    if isinstance(args[-1], np.dtype):
+        inf.dtype = args[-1]
+        args = args[:-1]
+        explicit_dtype = True
+
+    argc = len(args)
+    if argc == 0:
+        raise ValueError("stop argument required")
+    elif argc == 1:
+        inf.stop = args[0]
+    elif argc == 2:
+        inf.start = args[0]
+        inf.stop = args[1]
+    elif argc == 3:
+        inf.start = args[0]
+        inf.stop = args[1]
+        inf.step = args[2]
+    else:
+        raise ValueError("too many arguments")
+
+    admissible_names = ["start", "stop", "step", "dtype"]
+    for k, v in kwargs.items():
+        if k in admissible_names:
+            if getattr(inf, k) is None:
+                setattr(inf, k, v)
+                if k == "dtype":
+                    explicit_dtype = True
+            else:
+                raise ValueError(
+                        "may not specify '%s' by position and keyword" % k)
+        else:
+            raise ValueError("unexpected keyword argument '%s'" % k)
+
+    if inf.start is None:
+        inf.start = 0
+    if inf.step is None:
+        inf.step = 1
+    if inf.dtype is None:
+        inf.dtype = np.array([inf.start, inf.stop, inf.step]).dtype
+
+    # }}}
+
+    if not explicit_dtype:
+        raise TypeError("arange requires a dtype argument")
+
+    dtype = np.dtype(inf.dtype)
+    start = dtype.type(inf.start)
+    step = dtype.type(inf.step)
+    stop = dtype.type(inf.stop)
+
+    from math import ceil
+    size = int(ceil((stop-start)/step))
+
+    from pymbolic.primitives import Variable
+    return IndexLambda(start + Variable("_0") * step,
+                       shape=(size,), dtype=dtype, bindings={},
+                       axes=_get_default_axes(1))
+
+
 # {{{ comparison operator
 
 def _compare(x1: ArrayOrScalar, x2: ArrayOrScalar, which: str) -> Union[Array, bool]:
